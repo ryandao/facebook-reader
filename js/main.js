@@ -8,7 +8,6 @@
     nextBtn.href = '#';
     nextBtn.appendChild(document.createTextNode('Next'));
     var hasNext = false;
-    var page = 0;
 
     this.setHasNext = function(val) {
       if (val) {
@@ -19,7 +18,6 @@
     };
 
     nextBtn.onclick = function() {
-      page ++;
       _this.onNextClick();
     };
 
@@ -90,44 +88,37 @@
     });
 
     FB.login(function() {
-      var count = 0, pagination = 20;
       var mainView = new MainView(document.getElementById('fb'));
 
       var callback = function(response) {
+        console.log(response.data.length);
         for (var i = 0; i < response.data.length; i++) {
           var item = response.data[i];
           if (item.type === 'link') {
-            console.log(item);
             mainView.addToItemViews(new ItemView({
               title: item.name,
               description: item.description,
               url: item.link,
               user: item.from.name
             }));
-
-            count ++;
           }
         }
 
-        if (count < pagination && response.paging.next) {
-          FB.api(response.paging.next, callback);
+        if (response.paging.next) {
+          mainView.setHasNext(true);
+          mainView.onNextClick = function() {
+            count = 0;
+            mainView.clear();
+            FB.api(response.paging.next, callback);
+          };
         } else {
-          if (response.paging.next) {
-            mainView.setHasNext(true);
-            mainView.onNextClick = function() {
-              count = 0;
-              mainView.clear();
-              FB.api(response.paging.next, callback);
-            };
-          } else {
-            mainView.setHasNext(false);
-          }
-
-          mainView.render();
+          mainView.setHasNext(false);
         }
+
+        mainView.render();
       };
 
-      FB.api('/me/home', callback);
+      FB.api('/me/home', { limit: 500 }, callback);
     }, { scope: 'read_stream' });
   };
 
