@@ -3,28 +3,57 @@
     var _this = this;
     var itemViews = [];
     var loading = document.getElementById('loading');
+    var errMessage = document.getElementById('error');
     var el = document.createElement('ul');
-    var nextBtn = document.createElement('a');
-    nextBtn.href = '#';
-    nextBtn.appendChild(document.createTextNode('Next'));
-    var hasNext = false;
+    var error = false;
 
-    this.setHasNext = function(val) {
+    // Pagination stuff
+    var nextBtn = document.getElementById('nextBtn');
+    var prevBtn = document.getElementById('prevBtn');
+    this.pageNum = 1; this.maxPageNum = 1;
+
+    this.setError = function(val) {
+      error = val;
       if (val) {
-        nextBtn.style.display = 'block';
+        errMessage.style.display = 'block';
       } else {
-        nextBtn.style.display = 'none';
+        errMessage.style.display = 'none';
       }
-    };
+    }
 
     nextBtn.onclick = function() {
       _this.onNextClick();
     };
 
-    this.onNextClick = function() { return this; }
+    prevBtn.onclick = function() {
+      _this.onPrevClick();
+    }
 
-    this.addToItemViews = function(itemView) {
-      itemViews.push(itemView);
+    this.onNextClick = function() { return this; }
+    this.onPrevClick = function() { return this; }
+
+    this.addItems = function(items) {
+      if (items.length == 0) {
+        el.appendChild(document.createTextNode('No result found. Reload to fetch again.'))
+      } else {
+        for (var i = 0; i < items.length; i++) {
+          var item = items[i];
+          if (item.type === 'link') {
+            itemViews.push(new ItemView({
+              title: item.name,
+              description: item.description,
+              url: item.link,
+              user: item.from.name
+            }));
+          }
+        }
+      }
+    };
+
+    this.renderItems = function(items) {
+      this.clear();
+      this.addItems(items);
+      this.render();
     };
 
     this.clear = function() {
@@ -32,21 +61,30 @@
       el.remove();
       el = document.createElement('ul');
       nextBtn.style.display = 'none';
+      prevBtn.style.display = 'none';
       loading.style.display = 'block';
     };
 
     this.render = function() {
-      for (var i = 0; i < itemViews.length; i++) {
-        var itemView = itemViews[i];
-        var dom = itemView.dom();
-        if (dom) {
-          el.appendChild(dom);
-        }
-      }
+      loading.style.display = 'none';
 
-      root.appendChild(el);
-      root.appendChild(nextBtn);
-      loading.style.display = 'none'
+      if (error) {
+        errMessage.style.display = 'block';
+      } else {
+        errMessage.style.display = 'none';
+
+        for (var i = 0; i < itemViews.length; i++) {
+          var itemView = itemViews[i];
+          var dom = itemView.dom();
+          if (dom) {
+            el.appendChild(dom);
+          }
+        }
+
+        root.insertBefore(el, root.firstChild);
+        if (this.pageNum !== 1) { prevBtn.style.display = 'block'; }
+        if (this.pageNum < this.maxPageNum) { nextBtn.style.display = 'block'; }
+      }
     };
   };
 
@@ -81,6 +119,9 @@
   };
 
   window.fbAsyncInit = function() {
+    // A cache for all the results found so we don't need to reload everything
+    var resultCache = [];
+
     FB.init({
       appId : '665087956897812',
       xfbml : true,
@@ -91,28 +132,37 @@
       var mainView = new MainView(document.getElementById('fb'));
 
       var callback = function(response) {
-        console.log(response.data.length);
-        for (var i = 0; i < response.data.length; i++) {
-          var item = response.data[i];
-          if (item.type === 'link') {
-            mainView.addToItemViews(new ItemView({
-              title: item.name,
-              description: item.description,
-              url: item.link,
-              user: item.from.name
-            }));
-          }
-        }
+        if (response.data) {
+          resultCache[mainView.pageNum - 1] = response.data;
+          mainView.addItems(response.data);
 
-        if (response.paging.next) {
-          mainView.setHasNext(true);
-          mainView.onNextClick = function() {
-            count = 0;
-            mainView.clear();
-            FB.api(response.paging.next, callback);
-          };
+          if (response.paging && response.paging.next) {
+            mainView.maxPageNum ++;
+
+            mainView.onNextClick = function() {
+              mainView.pageNum ++;
+              mainView.clear();
+
+              if (resultCache[mainView.pageNum - 1]) {
+                mainView.renderItems(resultCache[mainView.pageNum - 1]);
+              } else {
+                FB.api(response.paging.next, callback);
+              }
+            };
+
+            mainView.onPrevClick = function() {
+              mainView.pageNum --;
+              mainView.clear();
+
+              if (resultCache[mainView.pageNum - 1]) {
+                mainView.renderItems(resultCache[mainView.pageNum - 1]);
+              } else {
+                FB.api(response.paging.previous, callback);
+              }
+            }
+          }
         } else {
-          mainView.setHasNext(false);
+          mainView.setError(true);
         }
 
         mainView.render();
